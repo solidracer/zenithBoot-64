@@ -252,7 +252,9 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
                 info->fb = (VOID*)gop->Mode->FrameBufferBase;
                 info->pixel_format = (zenith_fb_pixel_format_t)gop_info->PixelFormat;
             }
-            Print(L"Kernel segment loaded at 0x%X with size 0x%X (0x%X zeroed)\r\n", phdr.p_paddr, phdr.p_filesz, phdr.p_memsz - phdr.p_filesz);
+            #ifndef ZENITH_QUIET
+                Print(L"Kernel segment loaded at 0x%X with size 0x%X (0x%X zeroed)\r\n", phdr.p_paddr, phdr.p_filesz, phdr.p_memsz - phdr.p_filesz);
+            #endif
         }
     }
 
