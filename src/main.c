@@ -24,10 +24,12 @@ static VOID reportWarn(CHAR16 *str) {
 
 static VOID reportError(CHAR16 *str, EFI_STATUS ERR) {
     Print(L"[ERROR] %s: %r\r\n", str, ERR);
+    waitKeyPress();
 }
 
-static VOID reportErrorRaw(CHAR16 *str, CHAR16 *ERR) {
-    Print(L"[ERROR] %s: %s\r\n", str, ERR);
+static VOID reportErrorRaw(CHAR16 *ERR) {
+    Print(L"[ERROR] %s\r\n", ERR);
+    waitKeyPress();
 }
 
 static EFI_STATUS getFS(EFI_HANDLE handle, EFI_SIMPLE_FILE_SYSTEM_PROTOCOL **FS) {
@@ -126,21 +128,18 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     stat = getGOP(&gop);
     if (EFI_ERROR(stat)) {
         reportError(L"getGOP()", stat);
-        waitKeyPress();
         return stat;
     }
 
     stat = getFS(imghandle, &fs);
     if (EFI_ERROR(stat)) {
         reportError(L"getFS()", stat);
-        waitKeyPress();
         return stat;
     }
 
     stat = fs->OpenVolume(fs, &root);
     if (EFI_ERROR(stat)) {
         reportError(L"fs->OpenVolume()", stat);
-        waitKeyPress();
         return stat;
     }
 
@@ -153,7 +152,6 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     );
     if (EFI_ERROR(stat)) {
         reportError(L"root->Open(\"\\kernel.elf\")", stat);
-        waitKeyPress();
         return stat;
     }
 
@@ -166,7 +164,6 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     );
     if (EFI_ERROR(stat)) {
         reportError(L"kernel->Read()", stat);
-        waitKeyPress();
         return stat;
     }
     else if (size != sizeof(Elf64_Ehdr)) {
@@ -175,13 +172,11 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     }
     
     if (!isELF(&elf_kernel)) {
-        reportErrorRaw(L"isELF(kernel)", L"kernel is not elf");
-        waitKeyPress();
+        reportErrorRaw(L"kernel is not a valid elf file");
         return 1;
     }
     else if (!isELFSupported(&elf_kernel)) {
-        reportErrorRaw(L"isELFSupported(kernel)", L"kernel is not a supported elf type");
-        waitKeyPress();
+        reportErrorRaw(L"kernel is not a supported elf type");
         return 1;
     }
 
@@ -210,21 +205,24 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
             if (size) {
                 kernel->Read(kernel, &size, memory);
                 if (size != phdr.p_filesz) {
-                    reportWarn(L"Could not read the whole segment, zeroing unread memory");
+                    reportErrorRaw(L"could not read the whole segment, file is corrupted");
+                    return 1;
+                }
+                else if (size < phdr.p_memsz) {
+                    reportWarn(L"segment memory size is larger than file size, zeroing extra memory");
                     warn++;
                 }
             }
             if (!i) {
-                if (CompareMem(memory, (CHAR8[]){ 'Z', 'E', 'N', '1' }, 4)) {
-                    reportErrorRaw(L"validateHeader", L"boot magic number is wrong");
-                    waitKeyPress();
+                if (CompareMem(memory, "ZEN1", 4)) {
+                    reportErrorRaw(L"kernel boot magic number is wrong, it must be the \"ZEN1\"");
                     return 1;
                 }
                 zenith_boot_info_t *info = (zenith_boot_info_t*)ALIGN_TO((UINTN)(memory + 4), 8);
                 /* set the resolution of GOP */
                 EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *gop_info;
                 for (INT32 m = 0;m<gop->Mode->MaxMode;m++) {
-                    UINTN info_size = sizeof(EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
+                    UINTN info_size;
                     stat = gop->QueryMode(
                         gop,
                         m,
@@ -233,7 +231,6 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
                     );
                     if (EFI_ERROR(stat)) {
                         reportError(L"gop->QueryMode()", stat);
-                        waitKeyPress();
                         return stat;
                     }
                     else if (gop_info->HorizontalResolution == 640 && gop_info->VerticalResolution == 480
@@ -243,8 +240,7 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
                     }
                 }
                 if (found_mode==-1) {
-                    reportErrorRaw(L"readyGOP()", L"640x480 not supported");
-                    waitKeyPress();
+                    reportErrorRaw(L"graphics mode 640x480 is not supported");
                     return 1;
                 }
                 info->width = gop_info->HorizontalResolution;
