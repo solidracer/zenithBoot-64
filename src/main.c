@@ -11,11 +11,14 @@
 
 typedef VOID (*ENTRY)(VOID);
 
+static UINT8 warncnt = 0;
+
 static VOID waitKeyPress(VOID) {
     Print(L"Press any key to continue...");
     gBS->WaitForEvent(1, &gST->ConIn->WaitForKey, NULL);
     gST->ConIn->ReadKeyStroke(gST->ConIn, NULL);
     Print(L"\r\n");
+    warncnt++;
 }
 
 static VOID reportWarn(CHAR16 *str) {
@@ -88,6 +91,12 @@ static BOOLEAN isELFSupported(Elf64_Ehdr *hdr) {
     return FALSE;
 }
 
+#ifdef ZENITH_QUIET
+    #define WARN(msg)           (VOID)(msg)
+#else
+    #define WARN(msg)           reportWarn(msg)
+#endif
+
 EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     InitializeLib(imghandle, systab);
 
@@ -100,8 +109,6 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
 
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
 
-    UINT16 warn = 0;
-
     gST->ConOut->QueryMode(
         gST->ConOut,
         gST->ConOut->Mode->Mode,
@@ -113,17 +120,19 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     gST->ConOut->ClearScreen(gST->ConOut);
     gST->ConOut->EnableCursor(gST->ConOut, TRUE);
 
-    /* im pretty sure theres a better way to do this (the color) */
-    gST->ConOut->SetAttribute(gST->ConOut, EFI_CYAN);
-    PrintAt((columns - sizeof("zenithBoot (x86_64 EFI)")) / 2, 0, L"zenithBoot");
-    gST->ConOut->SetAttribute(gST->ConOut, EFI_DARKGRAY);
-    Print(L" (x86_64 EFI)\r\n");
-    gST->ConOut->SetAttribute(gST->ConOut, EFI_LIGHTGRAY);
+    #ifndef ZENITH_QUIET
+        /* im pretty sure theres a better way to do this (the color) */
+        gST->ConOut->SetAttribute(gST->ConOut, EFI_CYAN);
+        PrintAt((columns - sizeof("zenithBoot (x86_64 EFI)")) / 2, 0, L"zenithBoot");
+        gST->ConOut->SetAttribute(gST->ConOut, EFI_DARKGRAY);
+        Print(L" (x86_64 EFI)\r\n");
+        gST->ConOut->SetAttribute(gST->ConOut, EFI_LIGHTGRAY);
 
-    for (UINT32 c = 0;c<columns;c++)
-        PrintAt(c, 1, L"%c", 0x2550);
+        for (UINT32 c = 0;c<columns;c++)
+            PrintAt(c, 1, L"%c", 0x2550);
 
-    Print(L"\r\n");
+        Print(L"\r\n");
+    #endif
 
     stat = getGOP(&gop);
     if (EFI_ERROR(stat)) {
@@ -166,10 +175,8 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
         reportError(L"kernel->Read()", stat);
         return stat;
     }
-    else if (size != sizeof(Elf64_Ehdr)) {
-        reportWarn(L"Could not read the entire ELF header, This may lead to corruption of the staged kernel.");
-        warn++;
-    }
+    else if (size != sizeof(Elf64_Ehdr))
+        WARN(L"Could not read the entire ELF header, This may lead to corruption of the staged kernel.");
     
     if (!isELF(&elf_kernel)) {
         reportErrorRaw(L"kernel is not a valid elf file");
@@ -190,10 +197,8 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
         /* start parsing the header */
         if (phdr.p_type == PT_LOAD) {
             if (phdr.p_flags & PF_X) {
-                if (phdr.p_flags & PF_W) {
-                    reportWarn(L"Segment is against W^X policy");
-                    warn++;
-                }
+                if (phdr.p_flags & PF_W)
+                    WARN(L"Segment is against W^X policy");
                 memtype = EfiLoaderCode;
             }
             size = phdr.p_filesz;
@@ -208,10 +213,8 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
                     reportErrorRaw(L"could not read the whole segment, file is corrupted");
                     return 1;
                 }
-                else if (size < phdr.p_memsz) {
-                    reportWarn(L"segment memory size is larger than file size, zeroing extra memory");
-                    warn++;
-                }
+                else if (size < phdr.p_memsz)
+                    WARN(L"segment memory size is larger than file size, zeroing extra memory");
             }
             if (!i) {
                 if (CompareMem(memory, "ZEN1", 4)) {
@@ -253,16 +256,13 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
         }
     }
 
-    if (warn) {
-        Print(L"%d WARNINGS REPORTED\r\n", warn);
-        waitKeyPress();
-    }
-
-    Print(L"CLEANING UP\r\n");
     kernel->Close(kernel);
     root->Close(root);
 
-    #ifdef ZENITH_DEBUG
+    #ifndef ZENITH_QUIET
+        if (warncnt)
+            Print(L"%d WARNINGS REPORTED\r\n", warncnt);
+        Print(L"CLEANING UP\r\n");
         waitKeyPress();
     #endif
 

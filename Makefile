@@ -5,7 +5,8 @@ objcopy = objcopy
 src = $(wildcard src/*.c)
 obj = $(patsubst src/%.c,build/%.o,$(src))
 
-# flags ?= -DZENITH_DEBUG
+# only the "ZENITH_QUIET" flag is supported
+# make flags=-DZENITH_QUIET
 flags ?= 
 
 cflags = $(flags) -DEFIAPI=\_\_attribute\_\_\(\(ms_abi\)\) -I/usr/include/efi/ -fpic -ffreestanding -fno-stack-protector -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
