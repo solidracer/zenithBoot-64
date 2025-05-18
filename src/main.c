@@ -188,6 +188,7 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     }
 
     INT32 found_mode = -1;
+    zenith_memory_map_t *memmap;
     for (UINT32 i = 0;i<elf_kernel.e_phnum;i++) {
         Elf64_Phdr phdr;
         UINTN size = elf_kernel.e_phentsize;
@@ -222,6 +223,7 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
                     return 1;
                 }
                 zenith_boot_info_t *info = (zenith_boot_info_t*)ALIGN_TO((UINTN)(memory + 4), 8);
+                memmap = (zenith_memory_map_t*)ALIGN_TO(((UINTN)info) + sizeof(zenith_boot_info_t), 8);
                 /* set the resolution of GOP */
                 EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *gop_info;
                 for (INT32 m = 0;m<gop->Mode->MaxMode;m++) {
@@ -296,6 +298,10 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
     stat = gBS->ExitBootServices(imghandle, key);
     if (EFI_ERROR(stat))
         return stat;
+
+    memmap->desc_size = descsz;
+    memmap->entries = (mapsz / descsz);
+    memmap->map = (efi_memory_descr_t*)map;
 
     ENTRY entry = (ENTRY)elf_kernel.e_entry;
     entry();
