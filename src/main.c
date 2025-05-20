@@ -205,7 +205,8 @@ EFI_STATUS efi_main(EFI_HANDLE imghandle, EFI_SYSTEM_TABLE *systab) {
             size = phdr.p_filesz;
             CHAR8 *memory = (CHAR8*)phdr.p_paddr;
             UINTN pagesiz = EFI_SIZE_TO_PAGES(phdr.p_memsz);
-            gBS->AllocatePages(AllocateAddress, memtype, pagesiz, (VOID*)memory);
+            EFI_PHYSICAL_ADDRESS addr = phdr.p_paddr;
+            gBS->AllocatePages(AllocateAddress, memtype, pagesiz, &addr);
             SetMem(memory, phdr.p_memsz, 0);
             kernel->SetPosition(kernel, phdr.p_offset);
             if (size) {
